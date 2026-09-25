@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TouchBase - who's next</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#101a16; color:#e8f3ee; min-height:100vh; }
+  .wrap { max-width:720px; margin:0 auto; padding:28px 20px 80px; }
+  header { display:flex; justify-content:space-between; align-items:center; margin-bottom:22px; }
+  header h1 { font-size:22px; } header h1 span { color:#5be3a9; }
+  header a { color:#8ba79a; text-decoration:none; font-size:14px; }
+  .card { background:#16241e; border:1px solid #24453a; border-radius:12px; padding:18px; margin-bottom:18px; }
+  label { font-size:12px; color:#8ba79a; display:block; margin-bottom:4px; }
+  input, select { background:#101a16; border:1px solid #2e5647; border-radius:8px; color:#e8f3ee; padding:9px 10px; font-size:14px; width:100%; }
+  button { background:#5be3a9; border:none; color:#0a1a12; font-weight:700; padding:10px 20px; border-radius:9px; font-size:14px; cursor:pointer; }
+  button.ghost { background:#1e322a; color:#b9d4c8; padding:7px 14px; font-size:13px; }
+  button:hover { filter:brightness(1.1); }
+  .row { display:grid; grid-template-columns:2fr 1.4fr 1.4fr auto; gap:10px; align-items:end; }
+  .stats { display:flex; gap:26px; flex-wrap:wrap; }
+  .stat b { font-size:24px; color:#fff; display:block; }
+  .stat span { font-size:12px; color:#8ba79a; }
+  .person { display:flex; align-items:center; gap:14px; padding:12px 0; border-bottom:1px solid #1e322a; }
+  .person:last-child { border-bottom:none; }
+  .dot { width:10px; height:10px; border-radius:50%; flex:none; }
+  .dot.overdue { background:#ff6b6b; } .dot.soon { background:#ffc857; } .dot.ok { background:#5be3a9; }
+  .person .info { flex:1; }
+  .person .info b { font-size:15px; }
+  .person .meta { color:#8ba79a; font-size:12px; margin-top:2px; }
+  .person .due { text-align:right; font-size:13px; min-width:110px; }
+  .due .late { color:#ff6b6b; font-weight:700; }
+  .due .soon { color:#ffc857; font-weight:700; }
+  .due .ok { color:#5be3a9; }
+  .err { color:#ff8a8a; font-size:13px; margin-top:8px; }
+  .empty { color:#8ba79a; text-align:center; padding:22px 0; font-size:14px; }
+  a.rm { color:#e06b6b; font-size:12px; text-decoration:none; margin-left:8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><h1>Touch<span>Base</span></h1><a href="index.html">home</a></header>
+
+  <div class="card">
+    <div class="row">
+      <div><label>Name</label><input id="cname" placeholder="Maya"></div>
+      <div><label>Cadence</label><select id="ccad"></select></div>
+      <div><label>Last contact</label><input id="clast" type="date"></div>
+      <button id="add">Add</button>
+    </div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div class="card" id="sumcard" style="display:none">
+    <div class="stats" id="stats"></div>
+  </div>
+
+  <div class="card" id="listcard" style="display:none">
+    <div id="list"></div>
+  </div>
+  <div class="empty" id="empty">No one here yet. Add the first person you keep meaning to text.</div>
+</div>
+<script src="engine.js"></script>
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const todayStr = TouchEngine.fmtDay(TouchEngine.todayDay());
+  $('clast').value = todayStr;
+  TouchEngine.CADENCES.forEach(c => {
+    const o = document.createElement('option');
+    o.value = c.days; o.textContent = c.label + ' (' + c.days + 'd)';
+    $('ccad').appendChild(o);
+  });
+  $('ccad').value = '30';
+
+  let contacts = [];
+  try { contacts = JSON.parse(localStorage.getItem('touchbase-contacts') || '[]'); } catch(e) {}
+  function save(){ localStorage.setItem('touchbase-contacts', JSON.stringify(contacts)); }
+  function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  function dueText(r){
+    if (r.state === 'overdue') return '<span class="late">' + (-r.dueIn) + 'd overdue</span>';
+    if (r.state === 'soon') return '<span class="soon">due in ' + r.dueIn + 'd</span>';
+    return '<span class="ok">due in ' + r.dueIn + 'd</span>';
+  }
+
+  function render(){
+    const today = TouchEngine.todayDay();
+    const ranked = TouchEngine.rankContacts(contacts, today);
+    const sum = TouchEngine.summary(contacts, today);
+    $('empty').style.display = contacts.length ? 'none' : 'block';
+    $('listcard').style.display = contacts.length ? 'block' : 'none';
+    $('sumcard').style.display = contacts.length ? 'block' : 'none';
+    $('stats').innerHTML =
+      '<div class="stat"><b>' + sum.overdue + '</b><span>overdue</span></div>'
+      + '<div class="stat"><b>' + sum.dueSoon + '</b><span>due this week</span></div>'
+      + '<div class="stat"><b>' + sum.ok + '</b><span>on track</span></div>'
+      + (sum.next ? '<div class="stat"><b>' + esc(sum.next) + '</b><span>reach out next</span></div>' : '');
+    $('list').innerHTML = ranked.map(r => {
+      const i = contacts.findIndex(c => c.name === r.name && c.lastContact === r.lastContact);
+      return '<div class="person"><span class="dot ' + r.state + '"></span>'
+        + '<div class="info"><b>' + esc(r.name) + '</b><a class="rm" href="#" data-rm="' + i + '">remove</a>'
+        + '<div class="meta">every ' + r.cadenceDays + 'd - last contact ' + r.lastContact + ' (' + r.daysSince + 'd ago)</div></div>'
+        + '<div class="due">' + dueText(r) + '<div style="margin-top:6px"><button class="ghost" data-log="' + i + '">log contact</button></div></div></div>';
+    }).join('');
+    document.querySelectorAll('[data-log]').forEach(el => el.onclick = () => {
+      contacts[+el.dataset.log].lastContact = TouchEngine.fmtDay(TouchEngine.todayDay());
+      save(); render();
+    });
+    document.querySelectorAll('[data-rm]').forEach(el => el.onclick = (ev) => {
+      ev.preventDefault();
+      contacts.splice(+el.dataset.rm, 1);
+      save(); render();
+    });
+  }
+
+  $('add').onclick = () => {
+    $('err').textContent = '';
+    try {
+      const c = TouchEngine.normContact({ name: $('cname').value, cadenceDays: $('ccad').value, lastContact: $('clast').value });
+      if (TouchEngine.parseDay(c.lastContact) > TouchEngine.todayDay()) throw new Error('last contact is in the future');
+      contacts.push(c); save(); render();
+      $('cname').value = ''; $('clast').value = todayStr;
+    } catch(e) { $('err').textContent = e.message; }
+  };
+
+  render();
+})();
+</script>
+</body>
+</html>
